@@ -17,6 +17,7 @@ if __name__ == '__main__':
     launch.start()
     rospy.loginfo("started")
 
+    rospy.sleep(3)
     launch.shutdown()
 
 
