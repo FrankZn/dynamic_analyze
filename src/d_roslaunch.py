@@ -52,8 +52,12 @@ class Node:
         if master is None:
             master = rosgraph.Master(caller_id)
 
-        self.api_uri = master.lookupNode(self.name)
-        _, _, self.pid = ServerProxy(self.api_uri).getPid(caller_id)
+        try:
+            self.api_uri = master.lookupNode(self.name)
+        except:
+            raise Exception("Node {} not found in graph.".format(self.name))
+        else:
+            _, _, self.pid = ServerProxy(self.api_uri).getPid(caller_id)
 
         self.published_topics = set()
         self.subscribed_topics = set()
@@ -68,25 +72,7 @@ class Node:
         print("Subscribed topics: {}".format(self.subscribed_topics))
         print("Provided services: {}".format(self.provided_services))
 
-def d_launch(launchfile, time_to_run=5):
-    """
-    @param launchfile: launch file name
-    @type  launchfile: string
-    @return: nodes, topics, services
-    @rtype: {str: Node}, {str: Topic}, {str: Service}
-    """
-
-    uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-    launch = roslaunch.parent.ROSLaunchParent(uuid, [launchfile])
-    print("-" * 80)
-    print("INFO: Launch file loaded. uuid: {}".format(uuid))
-
-    launch.start()
-    print("-" * 80)
-    print("INFO: Launch starts.")
-    rospy.sleep(time_to_run)
-    print("------ {} secs ------".format(time_to_run))
-
+def analyze_graph(launch):
     caller_id = "/dynamic_analyzer"
     master = rosgraph.Master(caller_id)
     try:
@@ -111,7 +97,10 @@ def d_launch(launchfile, time_to_run=5):
         node_name = get_node_name_from_config_node(config_node)
         if node_name in nodes:
             raise Exception("Duplicate node: {}.".format(node_name))
-        nodes[node_name] = Node(config_node)
+        try:
+            nodes[node_name] = Node(config_node)
+        except Exception as e:
+            print(e)
 
     # Build services
     for service_name, providers in provided_services:
@@ -147,6 +136,31 @@ def d_launch(launchfile, time_to_run=5):
             if subscriber in nodes:
                 nodes[subscriber].subscribed_topics.add(topic_name)
 
+    return nodes, topics, services
+
+
+def d_launch(launchfile, time_to_run=5):
+    """
+    @param launchfile: launch file name
+    @type  launchfile: string
+    @return: nodes, topics, services
+    @rtype: {str: Node}, {str: Topic}, {str: Service}
+    """
+
+    uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+    launch = roslaunch.parent.ROSLaunchParent(uuid, [launchfile])
+    print("-" * 80)
+    print("INFO: Launch file loaded. uuid: {}".format(uuid))
+
+    launch.start()
+    print("-" * 80)
+    print("INFO: Launch starts.")
+    rospy.sleep(time_to_run)
+    print("------ {} secs ------".format(time_to_run))
+
+
+    nodes, topics, services = analyze_graph(launch)
+
     launch.shutdown()
     print("------ Shutdown ------")
 
@@ -179,7 +193,7 @@ def gen_features(nodes, topics, services):
                 raise Exception("Inconsistent service: {}.".format(service_name))
             features.add('srv#{}'.format(services[service_name].type))
 
-        feature_dict[node.type] = features
+        feature_dict[node.type] = list(features)
     return feature_dict
 
 if __name__ == '__main__':
